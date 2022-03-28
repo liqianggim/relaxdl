@@ -45,7 +45,6 @@ def load_weight(version='1.0', cache_dir='../data'):
                 if not data:
                     break
                 sha1.update(data)
-        print(sha1.hexdigest())
         if sha1.hexdigest() == sha1_hash:
             return fname
     print(f'download {url} -> {fname}...')
@@ -90,6 +89,8 @@ class Fire(nn.Module):
 
     def forward(self, x):
         """
+        squeeze -> expand -> concat
+
         参数:
         x的形状: (batch_size, inplanes, H, W)
 
@@ -482,7 +483,7 @@ def run():
         'num_epochs': 10,
         'loss': nn.CrossEntropyLoss(reduction='mean'),
         'optimizer': torch.optim.Adam(net.parameters(), lr=0.0001),
-        'save_path': '../data/mobilenet_v2.pth'
+        'save_path': '../data/squeezenet_v1_0.pth'
     }
     history = train_gpu(net, train_iter, test_iter, **kwargs)
     plot_history(history)
@@ -491,3 +492,27 @@ def run():
 
 if __name__ == '__main__':
     run()
+# 训练10个epochs的结果:
+# training on cuda
+# epoch 0, step 104, train loss 1.344, train acc 0.480: 100%|██████████| 104/104 [00:18<00:00,  5.63it/s]
+# epoch 0, step 104, train loss 1.344, train acc 0.480, test acc 0.709
+# epoch 1, step 104, train loss 0.822, train acc 0.747: 100%|██████████| 104/104 [00:16<00:00,  6.34it/s]
+# epoch 1, step 104, train loss 0.822, train acc 0.747, test acc 0.799
+# epoch 2, step 104, train loss 0.632, train acc 0.810: 100%|██████████| 104/104 [00:16<00:00,  6.33it/s]
+# epoch 2, step 104, train loss 0.632, train acc 0.810, test acc 0.860
+# epoch 3, step 104, train loss 0.552, train acc 0.819: 100%|██████████| 104/104 [00:16<00:00,  6.36it/s]
+# epoch 3, step 104, train loss 0.552, train acc 0.819, test acc 0.863
+# epoch 4, step 104, train loss 0.503, train acc 0.841: 100%|██████████| 104/104 [00:17<00:00,  6.02it/s]
+# epoch 4, step 104, train loss 0.503, train acc 0.841, test acc 0.876
+# epoch 5, step 104, train loss 0.471, train acc 0.849: 100%|██████████| 104/104 [00:16<00:00,  6.32it/s]
+# epoch 5, step 104, train loss 0.471, train acc 0.849, test acc 0.879
+# epoch 6, step 104, train loss 0.441, train acc 0.858: 100%|██████████| 104/104 [00:16<00:00,  6.31it/s]
+# epoch 6, step 104, train loss 0.441, train acc 0.858, test acc 0.879
+# epoch 7, step 104, train loss 0.426, train acc 0.855: 100%|██████████| 104/104 [00:16<00:00,  6.36it/s]
+# epoch 7, step 104, train loss 0.426, train acc 0.855, test acc 0.882
+# epoch 8, step 104, train loss 0.417, train acc 0.873: 100%|██████████| 104/104 [00:16<00:00,  6.38it/s]
+# epoch 8, step 104, train loss 0.417, train acc 0.873, test acc 0.882
+# epoch 9, step 104, train loss 0.402, train acc 0.861: 100%|██████████| 104/104 [00:16<00:00,  6.36it/s]
+# epoch 9, step 104, train loss 0.402, train acc 0.861, test acc 0.882
+# train loss 0.402, train acc 0.861, test acc 0.882
+# 1359.8 examples/sec on cuda
