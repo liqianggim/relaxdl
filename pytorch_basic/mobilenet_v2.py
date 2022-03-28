@@ -12,6 +12,12 @@ import torch.nn as nn
 from torchvision import transforms, datasets
 from matplotlib import pyplot as plt
 from tqdm import tqdm
+"""
+实现MobileNet V2
+
+实现说明:
+https://tech.foxrelax.com/ml/lightweight/mobilenet_v2/
+"""
 
 
 def _make_divisible(ch, divisor=8, min_ch=None):
@@ -61,7 +67,7 @@ def load_weight(cache_dir='../data'):
 class ConvBNReLU(nn.Sequential):
     """
     1. 当groups=1的时候是普通卷积
-    2. 当groups=in_channel=out_channel时, 是depthwise卷积(DW)
+    2. 当groups=in_channel=out_channel时, 是Depthwise Separable卷积(DW)
     """
     def __init__(self,
                  in_channel,
@@ -91,7 +97,12 @@ class ConvBNReLU(nn.Sequential):
 
 class InvertedResidual(nn.Module):
     """
+    实现Inverted Residual Block
+
+    注意: 
     当stride=1并且in_channel == out_channel会有残差连接, 否则没有残差连接
+    因为stride不等于1等于做了降维操作, 没法直接做add; 输入通道和输出通道不一致, 
+    也没法直接做add
     """
     def __init__(self, in_channel, out_channel, stride, expand_ratio):
         """
@@ -118,7 +129,7 @@ class InvertedResidual(nn.Module):
                        stride=stride,
                        groups=hidden_channel),
             # 1x1 pointwise conv(linear)
-            # 注意: 这里是没有激活函数的
+            # 注意: 这里是没有ReLU6激活函数的
             nn.Conv2d(hidden_channel, out_channel, kernel_size=1, bias=False),
             nn.BatchNorm2d(out_channel),
         ])
@@ -137,7 +148,9 @@ class MobileNetV2(nn.Module):
         """
         参数:
         num_classes: 分类数量
-        alpha: 缩放因子, 当alpha>1时, 相当于扩大模型的规模; alpha<1时, 相当于缩小模型的规模
+        alpha: 模型缩放因子
+               当alpha>1时, 相当于扩大模型的规模
+               alpha<1时, 相当于缩小模型的规模
         round_nearest: 默认为8
         """
         super(MobileNetV2, self).__init__()
@@ -145,8 +158,13 @@ class MobileNetV2(nn.Module):
         input_channel = _make_divisible(32 * alpha, round_nearest)
         last_channel = _make_divisible(1280 * alpha, round_nearest)
 
+        # 根据MobileNet V2论文中的设置配置倒残差块
         inverted_residual_setting = [
             # t, c, n, s
+            # t: 膨胀因子, 也就是每个倒残差块用1x1卷积升维之后的通道数
+            # c: 输出通道数
+            # n: 重复几次
+            # s: 第一个倒残差快的stirde
             [1, 16, 1, 1],
             [6, 24, 2, 2],
             [6, 32, 3, 2],
@@ -163,6 +181,8 @@ class MobileNetV2(nn.Module):
         for t, c, n, s in inverted_residual_setting:
             output_channel = _make_divisible(c * alpha, round_nearest)
             for i in range(n):
+                # stride只有在重复第一次的时候为s, 其它时候都为1,
+                # 因为我们的降维操作只做一次
                 stride = s if i == 0 else 1
                 features.append(
                     block(input_channel,
@@ -528,3 +548,26 @@ def run():
 
 if __name__ == '__main__':
     run()
+# training on cuda
+# epoch 0, step 104, train loss 1.320, train acc 0.560: 100%|██████████| 104/104 [00:17<00:00,  5.79it/s]
+# epoch 0, step 104, train loss 1.320, train acc 0.560, test acc 0.775
+# epoch 1, step 104, train loss 0.965, train acc 0.766: 100%|██████████| 104/104 [00:16<00:00,  6.21it/s]
+# epoch 1, step 104, train loss 0.965, train acc 0.766, test acc 0.832
+# epoch 2, step 104, train loss 0.792, train acc 0.807: 100%|██████████| 104/104 [00:16<00:00,  6.21it/s]
+# epoch 2, step 104, train loss 0.792, train acc 0.807, test acc 0.860
+# epoch 3, step 104, train loss 0.696, train acc 0.817: 100%|██████████| 104/104 [00:16<00:00,  6.18it/s]
+# epoch 3, step 104, train loss 0.696, train acc 0.817, test acc 0.876
+# epoch 4, step 104, train loss 0.625, train acc 0.820: 100%|██████████| 104/104 [00:16<00:00,  6.21it/s]
+# epoch 4, step 104, train loss 0.625, train acc 0.820, test acc 0.876
+# epoch 5, step 104, train loss 0.583, train acc 0.831: 100%|██████████| 104/104 [00:16<00:00,  6.21it/s]
+# epoch 5, step 104, train loss 0.583, train acc 0.831, test acc 0.882
+# epoch 6, step 104, train loss 0.555, train acc 0.835: 100%|██████████| 104/104 [00:16<00:00,  6.23it/s]
+# epoch 6, step 104, train loss 0.555, train acc 0.835, test acc 0.876
+# epoch 7, step 104, train loss 0.531, train acc 0.842: 100%|██████████| 104/104 [00:16<00:00,  6.23it/s]
+# epoch 7, step 104, train loss 0.531, train acc 0.842, test acc 0.887
+# epoch 8, step 104, train loss 0.498, train acc 0.853: 100%|██████████| 104/104 [00:16<00:00,  6.20it/s]
+# epoch 8, step 104, train loss 0.498, train acc 0.853, test acc 0.890
+# epoch 9, step 104, train loss 0.486, train acc 0.849: 100%|██████████| 104/104 [00:16<00:00,  6.20it/s]
+# epoch 9, step 104, train loss 0.486, train acc 0.849, test acc 0.893
+# train loss 0.486, train acc 0.849, test acc 0.893
+# 1243.0 examples/sec on cuda
