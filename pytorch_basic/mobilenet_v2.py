@@ -220,7 +220,7 @@ class MobileNetV2(nn.Module):
 
 
 def mobilenet_v2(pretrained=True, num_classes=5, alpha=1.0, round_nearest=8):
-    net = MobileNetV2(num_classes)
+    net = MobileNetV2(num_classes, alpha, round_nearest)
     if pretrained:
         model_weight_path = load_weight(cache_dir='../data')
         pre_weights = torch.load(model_weight_path, map_location='cpu')
