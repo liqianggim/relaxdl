@@ -292,7 +292,7 @@ class ShuffleNetV2(nn.Module):
         return self._forward_impl(x)
 
 
-def shufflenetv2(arch='1.0', pretrained=True, num_classes=5):
+def shufflenet_v2(arch='1.0', pretrained=True, num_classes=5):
     if arch == '0.5':
         stages_repeats = [4, 8, 4]
         stages_out_channels = [24, 48, 96, 192, 1024]
@@ -620,7 +620,7 @@ def plot_history(history, figsize=(6, 4)):
 
 def run():
     train_iter, test_iter, _, _ = load_data_flower(batch_size=32)
-    net = shufflenetv2()
+    net = shufflenet_v2()
     kwargs = {
         'num_epochs': 10,
         'loss': nn.CrossEntropyLoss(reduction='mean'),
