@@ -487,7 +487,6 @@ def run():
     }
     history = train_gpu(net, train_iter, test_iter, **kwargs)
     plot_history(history)
-    pass
 
 
 if __name__ == '__main__':

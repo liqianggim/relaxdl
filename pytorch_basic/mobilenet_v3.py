@@ -143,7 +143,7 @@ class SqueezeExcitation(nn.Module):
 
 class InvertedResidualConfig:
     """
-    倒残差块的配置信息(和论文中的配置一一对应)
+    Block配置信息(和论文中的配置一一对应)
     """
     def __init__(self, input_c, kernel, expanded_c, out_c, use_se, activation,
                  stride, width_multi):
@@ -728,7 +728,6 @@ def run():
     }
     history = train_gpu(net, train_iter, test_iter, **kwargs)
     plot_history(history)
-    pass
 
 
 if __name__ == '__main__':
