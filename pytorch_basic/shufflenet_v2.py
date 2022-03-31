@@ -3,12 +3,16 @@ import sys
 import time
 import requests
 import hashlib
+from typing import Dict, List, Callable, Tuple
 from shutil import copy, rmtree
 import random
 import zipfile
 import tarfile
 import torch
+from torch import Tensor
 import torch.nn as nn
+from torch.utils.data import DataLoader
+from torch.optim import Optimizer
 from torchvision import transforms, datasets
 from matplotlib import pyplot as plt
 from tqdm import tqdm
@@ -20,7 +24,7 @@ https://tech.foxrelax.com/ml/lightweight/shufflenet_v2/
 """
 
 
-def load_weight(arch='0.5', cache_dir='../data'):
+def load_weight(arch: float = '0.5', cache_dir: str = '../data') -> str:
     """
     加载预训练权重(class=1000的ImageNet数据集上训练的)
     """
@@ -56,7 +60,7 @@ def load_weight(arch='0.5', cache_dir='../data'):
     return fname
 
 
-def channel_shuffle(x, groups):
+def channel_shuffle(x: Tensor, groups: int) -> Tensor:
     """
     1. Reshape: 先将输入通道这个维度Reshape成两个维度: 一个是卷积的group数, 一个是每个group包含的channel数
     2. Transpose: 将扩展出去的两个维度置换
@@ -102,7 +106,7 @@ class InvertedResidual(nn.Module):
     >>> blk2 = InvertedResidual(8, 16, 2)
     >>> assert blk2(x).shape == (2, 16, 32, 32)
     """
-    def __init__(self, inp, oup, stride):
+    def __init__(self, inp: int, oup: int, stride: int):
         """
         1. stride=1的时候, inp=oup
         2. stride=2的时候, inp*2=oup
@@ -178,7 +182,12 @@ class InvertedResidual(nn.Module):
         )
 
     @staticmethod
-    def depthwise_conv(i, o, kernel_size, stride=1, padding=0, bias=False):
+    def depthwise_conv(i: int,
+                       o: int,
+                       kernel_size: int,
+                       stride: int = 1,
+                       padding: int = 0,
+                       bias: bool = False) -> nn.Conv2d:
         """
         Depthwise Conv
         """
@@ -190,7 +199,7 @@ class InvertedResidual(nn.Module):
                          bias=bias,
                          groups=i)  # group=i
 
-    def forward(self, x):
+    def forward(self, x: Tensor) -> Tensor:
         if self.stride == 1:
             # 将x在通道这个维度一分为二: x1, x2
             x1, x2 = x.chunk(2, dim=1)  # split
@@ -207,10 +216,10 @@ class InvertedResidual(nn.Module):
 class ShuffleNetV2(nn.Module):
     def __init__(
         self,
-        stages_repeats,
-        stages_out_channels,
-        num_classes=1000,
-        inverted_residual=InvertedResidual,
+        stages_repeats: List[int],
+        stages_out_channels: List[int],
+        num_classes: int = 1000,
+        inverted_residual: Callable[..., nn.Module] = InvertedResidual,
     ):
         """
         参数:
@@ -274,7 +283,7 @@ class ShuffleNetV2(nn.Module):
 
         self.fc = nn.Linear(output_channels, num_classes)
 
-    def _forward_impl(self, x):
+    def _forward_impl(self, x: Tensor) -> Tensor:
         # See note [TorchScript super()]
         x = self.conv1(x)
         x = self.maxpool(x)
@@ -288,11 +297,13 @@ class ShuffleNetV2(nn.Module):
         x = self.fc(x)
         return x
 
-    def forward(self, x):
+    def forward(self, x: Tensor) -> Tensor:
         return self._forward_impl(x)
 
 
-def shufflenet_v2(arch='1.0', pretrained=True, num_classes=5):
+def shufflenet_v2(arch: str = '1.0',
+                  pretrained: bool = True,
+                  num_classes: int = 5) -> ShuffleNetV2:
     if arch == '0.5':
         stages_repeats = [4, 8, 4]
         stages_out_channels = [24, 48, 96, 192, 1024]
@@ -324,7 +335,7 @@ def shufflenet_v2(arch='1.0', pretrained=True, num_classes=5):
     return net
 
 
-def download(cache_dir='../data'):
+def download(cache_dir: str = '../data') -> str:
     """
     下载数据
     """
@@ -352,7 +363,7 @@ def download(cache_dir='../data'):
     return fname
 
 
-def download_extract(cache_dir='../data'):
+def download_extract(cache_dir: str = '../data') -> str:
     """
     下载数据 & 解压
     """
@@ -373,14 +384,14 @@ def download_extract(cache_dir='../data'):
     return data_dir
 
 
-def mk_file(file_path: str):
+def mk_file(file_path: str) -> None:
     if os.path.exists(file_path):
         # 如果文件夹存在，则先删除原文件夹在重新创建
         rmtree(file_path)
     os.makedirs(file_path)
 
 
-def process_data(data_path, val_rate=0.1):
+def process_data(data_path: str, val_rate: float = 0.1) -> Tuple[str, str]:
     """
     data_path=../data/flower_photos
     ../data/flower_photos/ (3670个样本)
@@ -452,7 +463,11 @@ def process_data(data_path, val_rate=0.1):
     return train_root, val_root
 
 
-def load_data_flower(batch_size, resize=224, root='../data'):
+def load_data_flower(
+    batch_size: int,
+    resize: int = 224,
+    root: str = '../data'
+) -> Tuple[DataLoader, DataLoader, Dict[str, int], Dict[int, str]]:
     """
     加载Flower数据集
 
@@ -499,16 +514,14 @@ def load_data_flower(batch_size, resize=224, root='../data'):
     class_to_idx = train_dataset.class_to_idx
     idx_to_class = dict((val, key) for key, val in class_to_idx.items())
 
-    train_iter = torch.utils.data.DataLoader(train_dataset,
-                                             batch_size=batch_size,
-                                             shuffle=True)
+    train_iter = DataLoader(train_dataset, batch_size=batch_size, shuffle=True)
 
     validate_dataset = datasets.ImageFolder(val_root,
                                             transform=data_transform["val"])
     val_num = len(validate_dataset)
-    val_iter = torch.utils.data.DataLoader(validate_dataset,
-                                           batch_size=batch_size,
-                                           shuffle=False)
+    val_iter = DataLoader(validate_dataset,
+                          batch_size=batch_size,
+                          shuffle=False)
 
     print("using {} images for training, {} images for validation.".format(
         train_num, val_num))
@@ -528,15 +541,15 @@ def accuracy(y_hat, y):
     return cmp.type(y.dtype).sum()
 
 
-def train_gpu(net,
-              train_iter,
-              test_iter,
-              num_epochs=10,
-              loss=None,
-              optimizer=None,
-              device=None,
-              verbose=False,
-              save_path=None):
+def train_gpu(
+        net: nn.Module,
+        train_iter: DataLoader,
+        test_iter: DataLoader,
+        num_epochs: int = 10,
+        loss: nn.Module = None,
+        optimizer: Optimizer = None,
+        device: torch.device = None,
+        save_path: str = None) -> List[List[float], List[float], List[float]]:
     """
     用GPU训练模型
     """
@@ -602,7 +615,10 @@ def train_gpu(net,
     return history
 
 
-def plot_history(history, figsize=(6, 4)):
+def plot_history(
+    history: List[List[float], List[float], List[float]],
+    figsize: Tuple[int, int] = (6, 4)
+) -> None:
     plt.figure(figsize=figsize)
     # 训练集损失, 训练集准确率, 测试集准确率
     num_epochs = len(history[2])
@@ -618,7 +634,7 @@ def plot_history(history, figsize=(6, 4)):
     plt.show()
 
 
-def run():
+def run() -> None:
     train_iter, test_iter, _, _ = load_data_flower(batch_size=32)
     net = shufflenet_v2()
     kwargs = {
