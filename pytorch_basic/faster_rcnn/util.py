@@ -1,8 +1,10 @@
-from typing import List, Dict
+from typing import List, Dict, Tuple
+from torch import Tensor
 from collections import defaultdict
 import PIL.ImageDraw as ImageDraw
 import PIL.ImageFont as ImageFont
 import numpy as np
+import torch
 
 STANDARD_COLORS = [
     'AliceBlue', 'Chartreuse', 'Aqua', 'Aquamarine', 'Azure', 'Beige',
@@ -30,6 +32,24 @@ STANDARD_COLORS = [
     'GreenYellow', 'Teal', 'Thistle', 'Tomato', 'Turquoise', 'Violet', 'Wheat',
     'White', 'WhiteSmoke', 'Yellow', 'YellowGreen'
 ]
+
+
+class ImageList(object):
+    def __init__(self, tensors: Tensor, image_sizes: List[Tuple[int,
+                                                                int]]) -> None:
+        """
+        图像List, 包含`padding后的图像数据`以及`padding前的图像尺寸`
+
+        参数:
+        tensors的形状: (batch_size, C, H_new, W_new) padding后的图像数据
+        image_sizes: list of (w, h) padding前的图像尺寸
+        """
+        self.tensors = tensors
+        self.image_sizes = image_sizes
+
+    def to(self, device: torch.device) -> object:
+        cast_tensor = self.tensors.to(device)
+        return ImageList(cast_tensor, self.image_sizes)
 
 
 def filter_low_thresh(boxes: List, scores: List, classes: List,
