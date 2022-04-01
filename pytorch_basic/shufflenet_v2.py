@@ -637,7 +637,7 @@ def run() -> None:
     kwargs = {
         'num_epochs': 10,
         'loss': nn.CrossEntropyLoss(reduction='mean'),
-        'optimizer': torch.optim.Adam(net.parameters(), lr=0.0001),
+        'optimizer': torch.optim.Adam(net.parameters(), lr=0.001),
         'save_path': '../data/shufflenetv2_1.0.pth'
     }
     history = train_gpu(net, train_iter, test_iter, **kwargs)
