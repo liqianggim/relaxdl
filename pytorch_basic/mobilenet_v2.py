@@ -1,3 +1,4 @@
+from typing import Tuple, Dict
 import os
 import sys
 import time
@@ -8,7 +9,9 @@ import random
 import zipfile
 import tarfile
 import torch
+from torch import Tensor
 import torch.nn as nn
+from torch.utils.data import DataLoader
 from torchvision import transforms, datasets
 from matplotlib import pyplot as plt
 from tqdm import tqdm
@@ -20,7 +23,7 @@ https://tech.foxrelax.com/ml/lightweight/mobilenet_v2/
 """
 
 
-def _make_divisible(ch, divisor=8, min_ch=None):
+def _make_divisible(ch: float, divisor: int = 8, min_ch: int = None) -> int:
     """
     This function is taken from the original tf repo.
     It ensures that all layers have a channel number that is divisible by 8
@@ -36,7 +39,7 @@ def _make_divisible(ch, divisor=8, min_ch=None):
     return new_ch
 
 
-def load_weight(cache_dir='../data'):
+def load_weight(cache_dir: str = '../data') -> str:
     """
     加载预训练权重(class=1000的ImageNet数据集上训练的)
     """
@@ -70,11 +73,11 @@ class ConvBNReLU(nn.Sequential):
     2. 当groups=in_channel=out_channel时, 是Depthwise Separable卷积(DW)
     """
     def __init__(self,
-                 in_channel,
-                 out_channel,
-                 kernel_size=3,
-                 stride=1,
-                 groups=1):
+                 in_channel: int,
+                 out_channel: int,
+                 kernel_size: int = 3,
+                 stride: int = 1,
+                 groups: int = 1) -> None:
         """
         参数:
         in_channel: 输入通道数
@@ -104,7 +107,8 @@ class InvertedResidual(nn.Module):
     因为stride不等于1等于做了降维操作, 没法直接做add; 输入通道和输出通道不一致, 
     也没法直接做add
     """
-    def __init__(self, in_channel, out_channel, stride, expand_ratio):
+    def __init__(self, in_channel: int, out_channel: int, stride: int,
+                 expand_ratio: float) -> None:
         """
         参数:
         in_channel: 输入通道数
@@ -136,7 +140,7 @@ class InvertedResidual(nn.Module):
 
         self.conv = nn.Sequential(*layers)
 
-    def forward(self, x):
+    def forward(self, x: Tensor) -> Tensor:
         if self.use_shortcut:
             return x + self.conv(x)
         else:
@@ -144,7 +148,10 @@ class InvertedResidual(nn.Module):
 
 
 class MobileNetV2(nn.Module):
-    def __init__(self, num_classes=1000, alpha=1.0, round_nearest=8):
+    def __init__(self,
+                 num_classes: int = 1000,
+                 alpha: float = 1.0,
+                 round_nearest: int = 8) -> None:
         """
         参数:
         num_classes: 分类数量
@@ -211,7 +218,7 @@ class MobileNetV2(nn.Module):
                 nn.init.normal_(m.weight, 0, 0.01)
                 nn.init.zeros_(m.bias)
 
-    def forward(self, x):
+    def forward(self, x: Tensor) -> Tensor:
         x = self.features(x)
         x = self.avgpool(x)
         x = torch.flatten(x, 1)
@@ -219,7 +226,10 @@ class MobileNetV2(nn.Module):
         return x
 
 
-def mobilenet_v2(pretrained=True, num_classes=5, alpha=1.0, round_nearest=8):
+def mobilenet_v2(pretrained: bool = True,
+                 num_classes: int = 5,
+                 alpha: float = 1.0,
+                 round_nearest: float = 8) -> MobileNetV2:
     net = MobileNetV2(num_classes, alpha, round_nearest)
     if pretrained:
         model_weight_path = load_weight(cache_dir='../data')
@@ -238,7 +248,7 @@ def mobilenet_v2(pretrained=True, num_classes=5, alpha=1.0, round_nearest=8):
     return net
 
 
-def download(cache_dir='../data'):
+def download(cache_dir: str = '../data') -> str:
     """
     下载数据
     """
@@ -266,7 +276,7 @@ def download(cache_dir='../data'):
     return fname
 
 
-def download_extract(cache_dir='../data'):
+def download_extract(cache_dir: str = '../data') -> str:
     """
     下载数据 & 解压
     """
@@ -287,14 +297,14 @@ def download_extract(cache_dir='../data'):
     return data_dir
 
 
-def mk_file(file_path: str):
+def mk_file(file_path: str) -> None:
     if os.path.exists(file_path):
         # 如果文件夹存在，则先删除原文件夹在重新创建
         rmtree(file_path)
     os.makedirs(file_path)
 
 
-def process_data(data_path, val_rate=0.1):
+def process_data(data_path: str, val_rate: float = 0.1) -> Tuple[str, str]:
     """
     data_path=../data/flower_photos
     ../data/flower_photos/ (3670个样本)
@@ -366,7 +376,11 @@ def process_data(data_path, val_rate=0.1):
     return train_root, val_root
 
 
-def load_data_flower(batch_size, resize=224, root='../data'):
+def load_data_flower(
+    batch_size: int,
+    resize: int = 224,
+    root: str = '../data'
+) -> Tuple[DataLoader, DataLoader, Dict[str, int], Dict[int, str]]:
     """
     加载Flower数据集
 
@@ -413,16 +427,14 @@ def load_data_flower(batch_size, resize=224, root='../data'):
     class_to_idx = train_dataset.class_to_idx
     idx_to_class = dict((val, key) for key, val in class_to_idx.items())
 
-    train_iter = torch.utils.data.DataLoader(train_dataset,
-                                             batch_size=batch_size,
-                                             shuffle=True)
+    train_iter = DataLoader(train_dataset, batch_size=batch_size, shuffle=True)
 
     validate_dataset = datasets.ImageFolder(val_root,
                                             transform=data_transform["val"])
     val_num = len(validate_dataset)
-    val_iter = torch.utils.data.DataLoader(validate_dataset,
-                                           batch_size=batch_size,
-                                           shuffle=False)
+    val_iter = DataLoader(validate_dataset,
+                          batch_size=batch_size,
+                          shuffle=False)
 
     print("using {} images for training, {} images for validation.".format(
         train_num, val_num))
