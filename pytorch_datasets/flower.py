@@ -1,4 +1,5 @@
 import os
+from typing import Tuple, Dict
 from shutil import copy, rmtree
 import random
 import hashlib
@@ -6,10 +7,11 @@ import requests
 import zipfile
 import tarfile
 import torch
+from torch.utils.data import DataLoader
 from torchvision import transforms, datasets
 
 
-def download(cache_dir='../data'):
+def download(cache_dir: str = '../data') -> str:
     """
     下载数据
     """
@@ -37,7 +39,7 @@ def download(cache_dir='../data'):
     return fname
 
 
-def download_extract(cache_dir='../data'):
+def download_extract(cache_dir: str = '../data') -> str:
     """
     下载数据 & 解压
     """
@@ -58,14 +60,14 @@ def download_extract(cache_dir='../data'):
     return data_dir
 
 
-def mk_file(file_path: str):
+def mk_file(file_path: str) -> None:
     if os.path.exists(file_path):
         # 如果文件夹存在，则先删除原文件夹在重新创建
         rmtree(file_path)
     os.makedirs(file_path)
 
 
-def process_data(data_path, val_rate=0.1):
+def process_data(data_path: str, val_rate: float = 0.1) -> Tuple[str, str]:
     """
     data_path=../data/flower_photos
     ../data/flower_photos/ (3670个样本)
@@ -137,7 +139,11 @@ def process_data(data_path, val_rate=0.1):
     return train_root, val_root
 
 
-def load_data_flower(batch_size, resize=224, root='../data'):
+def load_data_flower(
+    batch_size: int,
+    resize: int = 224,
+    root: str = '../data'
+) -> Tuple[DataLoader, DataLoader, Dict[str, int], Dict[int, str]]:
     """
     加载Flower数据集
 
@@ -184,16 +190,14 @@ def load_data_flower(batch_size, resize=224, root='../data'):
     class_to_idx = train_dataset.class_to_idx
     idx_to_class = dict((val, key) for key, val in class_to_idx.items())
 
-    train_iter = torch.utils.data.DataLoader(train_dataset,
-                                             batch_size=batch_size,
-                                             shuffle=True)
+    train_iter = DataLoader(train_dataset, batch_size=batch_size, shuffle=True)
 
     validate_dataset = datasets.ImageFolder(val_root,
                                             transform=data_transform["val"])
     val_num = len(validate_dataset)
-    val_iter = torch.utils.data.DataLoader(validate_dataset,
-                                           batch_size=batch_size,
-                                           shuffle=False)
+    val_iter = DataLoader(validate_dataset,
+                          batch_size=batch_size,
+                          shuffle=False)
 
     print("using {} images for training, {} images for validation.".format(
         train_num, val_num))

@@ -106,7 +106,7 @@ class InvertedResidual(nn.Module):
     >>> blk2 = InvertedResidual(8, 16, 2)
     >>> assert blk2(x).shape == (2, 16, 32, 32)
     """
-    def __init__(self, inp: int, oup: int, stride: int):
+    def __init__(self, inp: int, oup: int, stride: int) -> None:
         """
         1. stride=1的时候, inp=oup
         2. stride=2的时候, inp*2=oup
@@ -220,7 +220,7 @@ class ShuffleNetV2(nn.Module):
         stages_out_channels: List[int],
         num_classes: int = 1000,
         inverted_residual: Callable[..., nn.Module] = InvertedResidual,
-    ):
+    ) -> None:
         """
         参数:
         stages_repeats: e.g. [stage2, stage3, stage4]的重复次数, 因为论文中stage1,stage5只重复了一次
@@ -528,7 +528,7 @@ def load_data_flower(
     return train_iter, val_iter, class_to_idx, idx_to_class
 
 
-def accuracy(y_hat, y):
+def accuracy(y_hat: Tensor, y: Tensor) -> Tensor:
     """
     计算预测正确的数量
 
@@ -541,15 +541,14 @@ def accuracy(y_hat, y):
     return cmp.type(y.dtype).sum()
 
 
-def train_gpu(
-        net: nn.Module,
-        train_iter: DataLoader,
-        test_iter: DataLoader,
-        num_epochs: int = 10,
-        loss: nn.Module = None,
-        optimizer: Optimizer = None,
-        device: torch.device = None,
-        save_path: str = None) -> List[List[float], List[float], List[float]]:
+def train_gpu(net: nn.Module,
+              train_iter: DataLoader,
+              test_iter: DataLoader,
+              num_epochs: int = 10,
+              loss: nn.Module = None,
+              optimizer: Optimizer = None,
+              device: torch.device = None,
+              save_path: str = None) -> List[List[float]]:
     """
     用GPU训练模型
     """
@@ -616,9 +615,7 @@ def train_gpu(
 
 
 def plot_history(
-    history: List[List[float], List[float], List[float]],
-    figsize: Tuple[int, int] = (6, 4)
-) -> None:
+    history: List[List[float]], figsize: Tuple[int, int] = (6, 4)) -> None:
     plt.figure(figsize=figsize)
     # 训练集损失, 训练集准确率, 测试集准确率
     num_epochs = len(history[2])
