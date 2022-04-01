@@ -1,17 +1,16 @@
 import os
+from typing import Dict, List, Tuple
 import random
 import hashlib
-from tkinter import Y
 import requests
 import zipfile
 import tarfile
-import json
 from PIL import Image
 from lxml import etree
-
 import torch
-from torch.utils.data import Dataset
-from torchaudio import transforms
+from torch import Tensor
+import torch.nn as nn
+from torch.utils.data import Dataset, DataLoader
 import torchvision
 """
 http://host.robots.ox.ac.uk/pascal/VOC/voc2012/
@@ -109,7 +108,7 @@ VOC2012/ImageSets/Main/boat_train.txt
 """
 
 
-def download(cache_dir='../data'):
+def download(cache_dir: str = '../data') -> str:
     """
     下载数据
 
@@ -138,7 +137,7 @@ def download(cache_dir='../data'):
     return fname
 
 
-def download_extract(cache_dir='../data'):
+def download_extract(cache_dir: str = '../data') -> str:
     """
     下载数据 & 解压
     """
@@ -190,10 +189,10 @@ class VOCDataSet(Dataset):
     读取解析PASCAL VOC2012数据集
     """
     def __init__(self,
-                 voc_root=None,
-                 year="2012",
-                 transforms=None,
-                 txt_name="train.txt"):
+                 voc_root: str = None,
+                 year: str = "2012",
+                 transforms: nn.Module = None,
+                 txt_name: str = "train.txt") -> None:
         """
         参数:
         voc_root: 存放VOCdevkit的路径
@@ -252,7 +251,7 @@ class VOCDataSet(Dataset):
         """
         return len(self.xml_list)
 
-    def __getitem__(self, idx):
+    def __getitem__(self, idx: int) -> Tuple[object, Dict]:
         """
         没有使用transforms的例子:
         >>> train_dataset = VOCDataSet(voc_root, txt_name='train.txt')
@@ -378,7 +377,7 @@ class VOCDataSet(Dataset):
 
         return image, target
 
-    def get_height_and_width(self, idx):
+    def get_height_and_width(self, idx: int) -> Tuple[int, int]:
         """
         获取图片的高和宽
         
@@ -402,7 +401,7 @@ class VOCDataSet(Dataset):
         data_width = int(data["size"]["width"])
         return data_height, data_width
 
-    def parse_xml_to_dict(self, xml):
+    def parse_xml_to_dict(self, xml: object) -> Dict:
         """
         将xml文件解析成dict形式(参考tensorflow的recursive_parse_xml_to_dict)
 
@@ -459,7 +458,7 @@ class VOCDataSet(Dataset):
                 result[child.tag].append(child_result[child.tag])
         return {xml.tag: result}
 
-    def coco_index(self, idx):
+    def coco_index(self, idx: int) -> Tuple[Tuple[int, int], Dict]:
         """
         该方法是专门为pycocotools统计标签信息准备, 不对图像和标签作任何处理.
         由于不用去读取图片, 可大幅缩减统计时间
@@ -532,7 +531,7 @@ class VOCDataSet(Dataset):
         return (data_height, data_width), target
 
     @staticmethod
-    def collate_fn(batch):
+    def collate_fn(batch: object) -> Tuple:
         """
         注意:
         一个批量的图片的尺寸是不一样的, 我们需要自己处理一下batch,
@@ -545,10 +544,10 @@ class Compose(object):
     """
     组合多个transform
     函数"""
-    def __init__(self, transforms):
+    def __init__(self, transforms: List) -> None:
         self.transforms = transforms
 
-    def __call__(self, image, target):
+    def __call__(self, image: object, target: Dict) -> Tuple[object, Dict]:
         for t in self.transforms:
             image, target = t(image, target)
         return image, target
@@ -558,7 +557,7 @@ class ToTensor(object):
     """
     将PIL图像转为Tensor
     """
-    def __call__(self, image, target):
+    def __call__(self, image: object, target: Dict) -> Tuple[Tensor, Dict]:
         image = torchvision.transforms.functional.to_tensor(image)
         return image, target
 
@@ -570,10 +569,10 @@ class RandomHorizontalFlip(object):
     注意:
     翻转图像的时候bboxes要一起变化
     """
-    def __init__(self, prob=0.5):
+    def __init__(self, prob: float = 0.5) -> None:
         self.prob = prob
 
-    def __call__(self, image, target):
+    def __call__(self, image: object, target: Dict) -> Tuple[object, Dict]:
         if random.random() < self.prob:
             _, width = image.shape[-2:]
             image = image.flip(-1)  # 水平翻转图片
@@ -584,7 +583,8 @@ class RandomHorizontalFlip(object):
         return image, target
 
 
-def load_pascal_voc(batch_size=8, root='../data'):
+def load_pascal_voc(batch_size: int = 8,
+                    root: str = '../data') -> Tuple[DataLoader, DataLoader]:
     """
     加载PASCAL VOC2012数据集
 
@@ -625,24 +625,23 @@ def load_pascal_voc(batch_size=8, root='../data'):
     train_dataset = VOCDataSet(voc_root,
                                transforms=data_transform['train'],
                                txt_name='train.txt')
-    train_iter = torch.utils.data.DataLoader(
-        train_dataset,
-        batch_size=batch_size,
-        shuffle=True,
-        pin_memory=True,
-        collate_fn=train_dataset.collate_fn)
+    train_iter = DataLoader(train_dataset,
+                            batch_size=batch_size,
+                            shuffle=True,
+                            pin_memory=True,
+                            collate_fn=train_dataset.collate_fn)
     val_dataset = VOCDataSet(voc_root,
                              transforms=data_transform['val'],
                              txt_name='val.txt')
-    val_iter = torch.utils.data.DataLoader(val_dataset,
-                                           batch_size=batch_size,
-                                           shuffle=False,
-                                           pin_memory=True,
-                                           collate_fn=val_dataset.collate_fn)
+    val_iter = DataLoader(val_dataset,
+                          batch_size=batch_size,
+                          shuffle=False,
+                          pin_memory=True,
+                          collate_fn=val_dataset.collate_fn)
     return train_iter, val_iter
 
 
-def random_sample(n=1):
+def random_sample(n: int = 1) -> List[Tuple[Tensor, Dict]]:
     """
     从验证集中随机采样n个样本
 
