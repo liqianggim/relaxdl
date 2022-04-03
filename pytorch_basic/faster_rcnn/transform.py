@@ -1,16 +1,34 @@
 import math
 from typing import List, Tuple, Dict, Optional
-
 import torch
 from torch import nn, Tensor
 
-from util import ImageList
+
+class ImageList(object):
+    def __init__(self, tensors: Tensor, image_sizes: List[Tuple[int,
+                                                                int]]) -> None:
+        """
+        送入Faster RCNN网络的就是ImageList格式的图像, ImageList包含下面两部分信息
+        <1> ImageList.tensors: padding后的图像数据, 图像具有相同的尺寸
+        <2> ImageList.image_size: padding前的图像尺寸
+
+        参数:
+        tensors的形状: (batch_size, C, H_new, W_new) padding后的图像数据
+        image_sizes: list of (H, W) padding前的图像尺寸, 一共batch_size个元素
+        """
+        self.tensors = tensors
+        self.image_sizes = image_sizes
+
+    def to(self, device: torch.device) -> object:
+        cast_tensor = self.tensors.to(device)
+        return ImageList(cast_tensor, self.image_sizes)
 
 
 def _resize_image(image: Tensor, self_min_size: float,
                   self_max_size: float) -> Tensor:
     """
-    缩放一张图片, 确保缩放后的图片尺寸在[self_min_size, self_max_size]范围内
+    缩放一张图片(双线性插值 bilinear), 确保缩放后的图片尺寸
+    在[self_min_size, self_max_size]范围内
 
     参数:
     image的形状: (C, H, W)
@@ -44,14 +62,24 @@ def _resize_image(image: Tensor, self_min_size: float,
 
 class GeneralizedRCNNTransform(nn.Module):
     """
-    将images和target送入GeneralizedRCNN之前做transform
-    1. 遍历所有的图片
-        <1> 对图片进行标准化处理: self.normalize()
-        <2> 将图片(及其对应的bboxes)缩放到指定的大小范围内: self.resize()
-    2. 将图片处理成形状相同的批量: self.batch_images()
+    将load_pascal_voc(batch_size)获得的一个batch的images和target做Transform, 
+    处理之后的结果可以送入Faster RCNN网络
+
+    1. 遍历batch中所有的图片
+       <1> 对图片进行标准化处理: self.normalize()
+       <2> 将图片(及其对应的bboxes)缩放到指定的大小范围内: self.resize()
+    2. 将batch中所有的图片处理成相同的形状: self.batch_images()
+       <1> 找到这个batch图片的: 最大的高度H和最大宽度W
+       <2> 创建一个形状为: batched_imgs.shape = (batch_size, C, H, W)全为0填充的
+           4-D Tensor
+       <3> 将输入images中的每张图片复制到新的batched_imgs的每张图片中, 对齐左上角, 保证bboxes的
+           坐标不变, 这样保证输入到网络中一个batch的每张图片的shape相同
+       <4> 返回这个批量的图片batched_imgs
     3. 返回处理后的数据: ImageList, targets
-        <1> ImageList: 包含`padding后的图像数据`以及`padding前的图像尺寸`
-        <2> targets: 处理后的targets, 因为图片进行了resize, 所以其对应的bbox也做相应的缩放
+       <1> ImageList: 包含下面两部分信息
+           a. ImageList.tensors: padding后的图像数据, 图像具有相同的尺寸
+           b. ImageList.image_size: padding前的图像尺寸
+       <2> targets: 处理后的targets, 因为图片进行了resize, 所以其对应的bbox也做相应的缩放
 
     Exmaple:
     >>> from pascal_voc import load_pascal_voc
@@ -70,9 +98,11 @@ class GeneralizedRCNNTransform(nn.Module):
     >>>     print(targets[0])
     >>>     break
         torch.Size([8, 3, 1216, 1216])
+        
         [(800, 1066), (800, 1066), (800, 1201), (800, 1126),
          (800, 904), (1201, 800), (1201, 800), (800, 1066)]
-         {
+
+        {
           'boxes': tensor([[  29.8480,   46.9333, 1055.3400,  782.9333]]),
           'labels': tensor([8]),
           'image_id': tensor([3984]),
@@ -132,8 +162,7 @@ class GeneralizedRCNNTransform(nn.Module):
         self, image: Tensor, target: Optional[Dict[str, Tensor]]
     ) -> Tuple[Tensor, Optional[Dict[str, Tensor]]]:
         """
-        处理一张图片
-        将图片(及其对应的bboxes)缩放到指定的大小范围内
+        处理一张图片, 将图片(及其对应的bboxes)缩放到指定的大小范围内
 
         参数:
         image的形状: (C, H, W)
@@ -197,6 +226,8 @@ class GeneralizedRCNNTransform(nn.Module):
                      images: List[Tensor],
                      size_divisible: int = 32) -> Tensor:
         """
+        将batch中所有的图片处理成相同的形状
+
         1. 找到这个批量图片的: 最大的高度H和最大宽度W
         2. 创建一个形状为: batched_imgs.shape = (batch_size, C, H, W)全为0填充的
            4-D Tensor
@@ -248,8 +279,8 @@ class GeneralizedRCNNTransform(nn.Module):
             image_id - 图片索引
             area     - 边界框面积
             iscrowd  - 表示目标检测的难易程度: 0表示容易检测; 1表示比较难检测
-        image_shapes: list of (w, h)
-        original_image_sizes: list of (w, h)
+        image_shapes: list of (h, w)
+        original_image_sizes: list of (h, w)
         """
         if self.training:
             return result
@@ -279,12 +310,14 @@ class GeneralizedRCNNTransform(nn.Module):
         """
         将一个批量的图片处理成可以直接送入网络训练的格式
 
-        1. 遍历所有的图片
+        1. 遍历batch中所有的图片
            <1> 对图片进行标准化处理: self.normalize()
            <2> 将图片(及其对应的bboxes)缩放到指定的大小范围内: self.resize()
-        2. 将图片处理成形状相同的批量: self.batch_images()
+        2. 将batch中所有的图片处理成相同的形状: self.batch_images()
         3. 返回处理后的数据: ImageList, targets
-           <1> ImageList: 包含`padding后的图像数据`以及`padding前的图像尺寸`
+           <1> ImageList: 包含下面两部分信息
+               a. ImageList.tensors: padding后的图像数据, 图像具有相同的尺寸
+               b. ImageList.image_size: padding前的图像尺寸
            <2> targets: 处理后的targets, 因为图片进行了resize, 所以其对应的bbox也做相应的缩放
 
         参数:
@@ -297,7 +330,10 @@ class GeneralizedRCNNTransform(nn.Module):
             iscrowd  - 表示目标检测的难易程度: 0表示容易检测; 1表示比较难检测
 
         返回:
-        images: ImageList, 包含`padding后的图像数据`以及`padding前的图像尺寸`
+        images: 
+          ImageList: 包含下面两部分信息
+          a. ImageList.tensors: padding后的图像数据, 图像具有相同的尺寸
+          b. ImageList.image_size: padding前的图像尺寸
         targets: list of dict, 每个dict包含如下k/v对:
             boxes    - list of [xmin, ymin, xmax, ymax]
             labels   - 标签列表
