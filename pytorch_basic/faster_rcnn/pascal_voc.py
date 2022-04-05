@@ -1,4 +1,5 @@
 import os
+from collections import defaultdict
 from typing import Dict, List, Tuple
 import random
 import hashlib
@@ -318,7 +319,7 @@ class VOCDataSet(Dataset):
           boxes    - list of [xmin, ymin, xmax, ymax]
           labels   - 标签列表
           image_id - 图片索引
-          area     - 边界框面积
+          area     - box面积列表
           iscrowd  - 表示目标检测的难易程度: 0表示容易检测; 1表示比较难检测
 
         """
@@ -366,10 +367,10 @@ class VOCDataSet(Dataset):
         area = (boxes[:, 3] - boxes[:, 1]) * (boxes[:, 2] - boxes[:, 0])
 
         target = {}
-        target["boxes"] = boxes  # [xmin, ymin, xmax, ymax]
-        target["labels"] = labels  # 标签
+        target["boxes"] = boxes  # List[[xmin, ymin, xmax, ymax]]
+        target["labels"] = labels  # 标签列表
         target["image_id"] = image_id  # 图片索引
-        target["area"] = area  # 边界框面积
+        target["area"] = area  # box面积列表
         target["iscrowd"] = iscrowd  # 表示目标检测的难易程度: 0表示容易检测; 1表示比较难检测
 
         if self.transforms is not None:
@@ -641,6 +642,99 @@ def load_pascal_voc(batch_size: int = 8,
     return train_iter, val_iter
 
 
+def stat():
+    """
+    打印数据集的统计信息:
+
+    1. boxes的数量信息(没有boxes为0的样本, 也就是每个样本至少有一个boxes)
+    train boxes=1, count=2470
+    train boxes=2, count=1237
+    train boxes=3, count=663
+    train boxes=4, count=415
+    train boxes=5, count=264
+    train boxes=6, count=196
+    train boxes=7, count=115
+    train boxes=8, count=106
+    train boxes=9, count=70
+    train boxes=10, count=55
+    train boxes=11, count=25
+    train boxes=12, count=24
+    train boxes=13, count=22
+    train boxes=14, count=10
+    train boxes=15, count=6
+    train boxes=16, count=11
+    train boxes=17, count=4
+    train boxes=18, count=8
+    train boxes=19, count=4
+    train boxes=20, count=2
+    train boxes=21, count=3
+    train boxes=22, count=3
+    train boxes=23, count=2
+    train boxes=38, count=1
+    train boxes=56, count=1
+    test boxes=1, count=2486
+    test boxes=2, count=1292
+    test boxes=3, count=709
+    test boxes=4, count=446
+    test boxes=5, count=274
+    test boxes=6, count=171
+    test boxes=7, count=117
+    test boxes=8, count=96
+    test boxes=9, count=54
+    test boxes=10, count=59
+    test boxes=11, count=27
+    test boxes=12, count=19
+    test boxes=13, count=16
+    test boxes=14, count=19
+    test boxes=15, count=8
+    test boxes=16, count=5
+    test boxes=17, count=4
+    test boxes=18, count=4
+    test boxes=19, count=4
+    test boxes=20, count=5
+    test boxes=21, count=2
+    test boxes=23, count=1
+    test boxes=24, count=1
+    test boxes=30, count=1
+    test boxes=32, count=1
+    test boxes=39, count=1
+    test boxes=42, count=1
+    """
+    train_iter, test_iter = load_pascal_voc(batch_size=1)
+    train_stat = defaultdict(int)
+    for images, targets in train_iter:
+        images = list(image for image in images)
+        targets = [{k: v for k, v in t.items()} for t in targets]
+        # 遍历每张图片
+        for _, target in zip(images, targets):
+            boxes = target['boxes']
+            labels = target['labels']
+            area = target['area']
+            assert len(boxes) == len(labels) == len(area)
+            train_stat[len(boxes)] += 1
+
+    test_stat = defaultdict(int)
+    for images, targets in test_iter:
+        images = list(image for image in images)
+        targets = [{k: v for k, v in t.items()} for t in targets]
+        # 遍历每张图片
+        for _, target in zip(images, targets):
+            boxes = target['boxes']
+            labels = target['labels']
+            area = target['area']
+            assert len(boxes) == len(labels) == len(area)
+            test_stat[len(boxes)] += 1
+
+    train_len_keys = list(train_stat.keys())
+    train_len_keys.sort()
+    for k in train_len_keys:
+        print(f'train boxes={k}, count={train_stat[k]}')
+    test_len_keys = list(test_stat.keys())
+    test_len_keys.sort()
+    for k in test_len_keys:
+        print(f'test boxes={k}, count={test_stat[k]}')
+
+
 def random_sample(n: int = 1) -> List[Tuple[Tensor, Dict]]:
     """
     从验证集中随机采样n个样本
@@ -670,3 +764,6 @@ def random_sample(n: int = 1) -> List[Tuple[Tensor, Dict]]:
         img, target = val_dataset[idx]
         samples.append((img, target))
     return samples
+
+
+stat()

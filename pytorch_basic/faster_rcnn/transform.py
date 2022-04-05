@@ -77,8 +77,8 @@ class GeneralizedRCNNTransform(nn.Module):
        <4> 返回这个批量的图片batched_imgs
     3. 返回处理后的数据: ImageList, targets
        <1> ImageList: 包含下面两部分信息
-           a. ImageList.tensors: padding后的图像数据, 图像具有相同的尺寸
-           b. ImageList.image_size: padding前的图像尺寸
+           a. ImageList.tensors: padding后的图像数据, 图像具有相同的尺寸: (batch_size, C, H_new, W_new)
+           b. ImageList.image_size: list of (H, W) padding前的图像尺寸, 一共batch_size个元素
        <2> targets: 处理后的targets, 因为图片进行了resize, 所以其对应的bbox也做相应的缩放
 
     Exmaple:
@@ -316,8 +316,8 @@ class GeneralizedRCNNTransform(nn.Module):
         2. 将batch中所有的图片处理成相同的形状: self.batch_images()
         3. 返回处理后的数据: ImageList, targets
            <1> ImageList: 包含下面两部分信息
-               a. ImageList.tensors: padding后的图像数据, 图像具有相同的尺寸
-               b. ImageList.image_size: padding前的图像尺寸
+               a. ImageList.tensors: padding后的图像数据, 图像具有相同的尺寸: (batch_size, C, H_new, W_new)
+               b. ImageList.image_size: list of (H, W) padding前的图像尺寸, 一共batch_size个元素
            <2> targets: 处理后的targets, 因为图片进行了resize, 所以其对应的bbox也做相应的缩放
 
         参数:
@@ -332,8 +332,8 @@ class GeneralizedRCNNTransform(nn.Module):
         返回:
         images: 
           ImageList: 包含下面两部分信息
-          a. ImageList.tensors: padding后的图像数据, 图像具有相同的尺寸
-          b. ImageList.image_size: padding前的图像尺寸
+          a. ImageList.tensors: padding后的图像数据, 图像具有相同的尺寸: (batch_size, C, H_new, W_new)
+          b. ImageList.image_size: list of (H, W) padding前的图像尺寸, 一共batch_size个元素
         targets: list of dict, 每个dict包含如下k/v对:
             boxes    - list of [xmin, ymin, xmax, ymax]
             labels   - 标签列表
