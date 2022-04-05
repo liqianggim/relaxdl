@@ -204,11 +204,10 @@ def create_model(num_classes: int = 21) -> FasterRCNN:
     return model
 
 
-def forward():
+def forward(batch_size=2):
     device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
     print("Using {} device training.".format(device.type))
-    batch_size = 8
-    train_iter, test_iter = load_pascal_voc(batch_size)
+    train_iter, _ = load_pascal_voc(batch_size)
     # background + 20 classes
     model = create_model(num_classes=21)
     model.to(device)
@@ -216,10 +215,9 @@ def forward():
     for i, (images, targets) in enumerate(train_iter):
         images = list(image.to(device) for image in images)
         targets = [{k: v.to(device) for k, v in t.items()} for t in targets]
-        loss_dict = model(images, targets)  # FasterRCNN
+        loss_dict, _ = model(images, targets)  # FasterRCNN
         losses = sum(loss for loss in loss_dict.values())
         print(f'step:{i} losses:{losses}')
         break
 
-
-forward()
+forward(4)

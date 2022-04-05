@@ -764,6 +764,3 @@ def random_sample(n: int = 1) -> List[Tuple[Tensor, Dict]]:
         img, target = val_dataset[idx]
         samples.append((img, target))
     return samples
-
-
-stat()
