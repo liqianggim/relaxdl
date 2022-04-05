@@ -345,7 +345,7 @@ class AnchorsGenerator(nn.Module):
 class RPNHead(nn.Module):
     """
     将backbone输出的feature map送入RPNHead, RPNHead会输出feature map上每个像素对应的
-    anchors的分类和offset结果
+    anchors的`分类`和`offset结果`
 
     1. 3x3滑动窗口提取多层feature map上的每个像素点的所有anchors的特征
     2. 预测每个锚框的分类(2分类)
@@ -521,14 +521,6 @@ def concat_box_prediction_layers(
 class RegionProposalNetwork(torch.nn.Module):
     """
     实现RPN(Region Proposal Network)
-
-    Arguments:
-        pre_nms_top_n (Dict[str]): number of proposals to keep before applying NMS. It should
-            contain two fields: training and testing, to allow for different values depending
-            on training or evaluation
-        post_nms_top_n (Dict[str]): number of proposals to keep after applying NMS. It should
-            contain two fields: training and testing, to allow for different values depending
-            on training or evaluation
     """
     __annotations__ = {
         'box_coder': BoxCoder,
@@ -551,8 +543,10 @@ class RegionProposalNetwork(torch.nn.Module):
                  score_thresh: float = 0.0) -> None:
         """
         参数:
-        anchor_generator: 针对多个feature map层生成anchors
-        head: 预测anchors的类别(背景还是前景)和offset
+        anchor_generator: 将`一个批量的图片imageList`以及`其backbone输出的feature_maps`作为输入, 
+                          输出`每张图片对应的anchors(是由feature map上的anchors映射过去的)`
+        head: 将backbone输出的feature map送入RPNHead, RPNHead会输出feature map上每个像素对应的
+              anchors的`分类`和`offset结果`
         fg_iou_thresh: 如果生成的anchors和ground truth的IoU大于这个值, 则标记为正样本. e.g. 0.7
         bg_iou_thresh: 如果生成的anchors和ground truth的IoU小于这个值, 则标记为负样本, e.g. 0.3
         batch_size_per_image: 计算损失时每张图片采用的正负样本的总个数, e.g. 256
@@ -610,16 +604,16 @@ class RegionProposalNetwork(torch.nn.Module):
                                Tensor]]) -> Tuple[List[Tensor], List[Tensor]]:
         """
         根据IoU Matrix来标记anchors & gt-boxes, 并划分为: 正样本, 背景以及废弃的样本
+
+        labels:
         <1> 正样本处标记为1
-        <2> 负样本处标记为0
+        <2> 负样本(背景)处标记为0
         <3> 丢弃样本处标记为-1
         
         参数:
         anchors: List[Tensor], 每张图片对应的anchors(是由feature map上的anchors映射过去的)
           1. 第一层List是这个batch有多少张图片, 也就是batch_size
-          2. Tensor的形状:
-             如果只有一层feature map: (h*w*num_anchors, 4)
-             如果有多层feature map: (h1*w1*num_anchors1 + h2*w2*num_anchors2 + ..., 4)
+          2. Tensor的形状: (N, 4)
         targets: list of dict, 每个dict包含如下k/v对: 元素个数=batch_size
             boxes    - list of [xmin, ymin, xmax, ymax]
             labels   - 标签列表
@@ -628,10 +622,13 @@ class RegionProposalNetwork(torch.nn.Module):
             iscrowd  - 表示目标检测的难易程度: 0表示容易检测; 1表示比较难检测
 
         返回: labels: List[Tensor], matched_gt_boxes: List[Tensor]
-        labels的Tensor形状为: (h1*w1*num_anchors1 + h2*w2*num_anchors2 + ..., )
-          1, 0, -1分别对应: 正样本, 背景, 废弃的样本
-        matched_gt_boxes的Tensor形状为: (h1*w1*num_anchors1 + h2*w2*num_anchors2 + ..., 4)
-          与anchors匹配的gt box
+        labels的Tensor形状为: (N, ) - 每个anchors匹配到的类别
+          正样本处标记为1
+          负样本(背景)处标记为0
+          丢弃样本处标记为-1
+        matched_gt_boxes的Tensor形状为: (N, 4)
+          与anchor匹配的gt box
+          注意: 对于负样本/丢弃样本, 我们设置与其匹配的gt box索引为0, 这两类可以通过labels来区分
         """
         labels = []
         matched_gt_boxes = []
@@ -641,7 +638,7 @@ class RegionProposalNetwork(torch.nn.Module):
             # gt_boxes: (num_gt_boxes, 4)
             gt_boxes = targets_per_image["boxes"]
             if gt_boxes.numel() == 0:
-                # 没有gt boxes, 则label都为0
+                # 没有gt boxes, 则所有的anchors都标记为负类(背景), label都为0
                 device = anchors_per_image.device
                 matched_gt_boxes_per_image = torch.zeros(
                     anchors_per_image.shape,
@@ -651,7 +648,7 @@ class RegionProposalNetwork(torch.nn.Module):
                                                dtype=torch.float32,
                                                device=device)
             else:
-                # 计算anchors与真实boxes的iou信息
+                # 计算anchors与真实gt boxes的iou信息
                 # set to self.box_similarity when https://github.com/pytorch/pytorch/issues/27495 lands
                 # match_quality_matrix的形状:
                 # (num_gt_boxes, h1*w1*num_anchors1 + h2*w2*num_anchors2 + ...)
@@ -738,8 +735,8 @@ class RegionProposalNetwork(torch.nn.Module):
         3. 移除宽/高小于min_size的proposals
         4. 移除小概率proposals(概率小于score_thresh)
         5. 针对每层feature map, 单独进行NMS操作
+        6. 返回最终留下来的proposals及其对应的分数(概率值)
         
-
         参数:
         proposals: (batch_size, h1*w1*num_anchors1+h2*w2*num_anchors2+..., 4) - 预测的boxes
         objectness: (batch_size*(h1*w1*num_anchors1+h2*w2*num_anchors2+...), 1) - 预测的目标概率
@@ -748,10 +745,10 @@ class RegionProposalNetwork(torch.nn.Module):
                                不同feature map层的num_anchors/h/w不同
 
         返回: final_boxes, final_scores
-        final_boxes: List[Tensor] - 最终保留下来的boxes
+        final_boxes: List[Tensor] - 最终保留下来的boxes, 按照分数从高到低降序排列
            List的元素个数=batch_size
            Tensor的形状: (K, 4), K为保留下来的proposals个数, 每个图像的K是不同的
-        final_scores: List[Tensor] - 最终保留下来的boxes对应的分数
+        final_scores: List[Tensor] - 最终保留下来的boxes对应的分数(也就是概率值)
            List的元素个数=batch_size
            Tensor的形状: (K, ), K为保留下来的proposals个数, 每个图像的K是不同的
         """
@@ -829,10 +826,11 @@ class RegionProposalNetwork(torch.nn.Module):
             # lvl的形状: (K,)
             boxes, scores, lvl = boxes[keep], scores[keep], lvl[keep]
 
-            # 针对每一层feature map/每个类别单独使用NMS, 这样每一层feature map/每个类别
+            # 针对`每一层feature map`/`每个类别`单独使用NMS, 这样`每一层feature map`/`每个类别`
             # 对应的boxes不会相互影响
-            # keep: (K, ), 返回的是保留的K个boxes的索引
+            # keep: (K, ), 返回的是保留的K个boxes的索引, 按照分数从高到低降序排列
             keep = batched_nms(boxes, scores, lvl, self.nms_thresh)
+
             keep = keep[:self.post_nms_top_n()]
             # boxes的形状: (K, 4)
             # scores的形状: (K,)
@@ -862,6 +860,7 @@ class RegionProposalNetwork(torch.nn.Module):
         objectness_loss: 分类的损失(前景与背景) Tensor 标量
         box_loss: 边界框回归的损失 Tensor 标量
         """
+        # 对正负样本进行采样, 按照一定比例返回正样本和负样本
         # sampled_pos_inds: List[Tensor] - 正样本的mask
         #   Tensor的形状: (h1*w1*num_anchors1 + h2*w2*num_anchors2 + ..., )
         #   正样本的位置会设置为1, 其它位置设置为0
@@ -1023,9 +1022,12 @@ class RegionProposalNetwork(torch.nn.Module):
             assert targets is not None
             # labels: List[Tensor] - 为每个anchor分配的标签
             #   Tensor形状为: (h1*w1*num_anchors1 + h2*w2*num_anchors2 + ..., )
-            #     1, 0, -1分别对应: 正样本, 背景, 废弃的样本
-            # matched_gt_boxes: List[Tensor] - 与anchors匹配的gt box
+            #   正样本处标记为1
+            #   负样本(背景)处标记为0
+            #   丢弃样本处标记为-1
+            # matched_gt_boxes: List[Tensor] - 与anchor匹配的gt box
             #   Tensor形状为: (h1*w1*num_anchors1 + h2*w2*num_anchors2 + ..., 4)
+            #   注意: 对于负样本/丢弃样本, 我们设置与其匹配的gt box索引为0, 这两类可以通过labels来区分
             labels, matched_gt_boxes = self.assign_targets_to_anchors(
                 anchors, targets)
             # 根据proposals和其匹配的gt boxes计算offset [可以作为训练时的label使用]

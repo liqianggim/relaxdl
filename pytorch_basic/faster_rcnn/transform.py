@@ -14,7 +14,7 @@ class ImageList(object):
 
         参数:
         tensors的形状: (batch_size, C, H_new, W_new) padding后的图像数据
-        image_sizes: list of (H, W) padding前的图像尺寸, 一共batch_size个元素
+        image_sizes: list of (H, W) resize之后, padding之前前的图像尺寸, 一共batch_size个元素
         """
         self.tensors = tensors
         self.image_sizes = image_sizes
@@ -226,7 +226,7 @@ class GeneralizedRCNNTransform(nn.Module):
                      images: List[Tensor],
                      size_divisible: int = 32) -> Tensor:
         """
-        将batch中所有的图片处理成相同的形状
+        将batch中所有的图片处理成相同的形状(会对图像做padding操作)
 
         1. 找到这个批量图片的: 最大的高度H和最大宽度W
         2. 创建一个形状为: batched_imgs.shape = (batch_size, C, H, W)全为0填充的
@@ -273,14 +273,13 @@ class GeneralizedRCNNTransform(nn.Module):
         对网络的预测结果进行后处理(将bboxes还原到原图像尺度上)
 
         参数:
-        result: list of dict, 每个dict包含如下k/v对:
+        result: list of dict, 每个dict包含如下k/v对: - 预测的bboxes
             boxes    - list of [xmin, ymin, xmax, ymax]
-            labels   - 标签列表
-            image_id - 图片索引
-            area     - 边界框面积
-            iscrowd  - 表示目标检测的难易程度: 0表示容易检测; 1表示比较难检测
-        image_shapes: list of (h, w)
-        original_image_sizes: list of (h, w)
+        image_shapes: list of (h, w)              - resize之后, padding之前前的图像尺寸
+        original_image_sizes: list of (h, w)      - 图像resize之前的原始尺寸
+
+        返回:
+        result: 会更新输入参数result里面的'boxes'这个字段, 并返回新的result
         """
         if self.training:
             return result
@@ -366,6 +365,7 @@ class GeneralizedRCNNTransform(nn.Module):
 
         # 记录resize后(padding前)的图像尺寸: [[H, W]]
         image_sizes = [img.shape[-2:] for img in images]
+        # 将所有的图片处理成相同的形状(会对图像做padding操作)
         # images的形状: (batch_size, C, H_new, W_new)
         images = self.batch_images(images)  # 将images打包成一个batch
         image_sizes_list = torch.jit.annotate(List[Tuple[int, int]], [])

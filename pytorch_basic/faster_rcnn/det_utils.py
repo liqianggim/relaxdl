@@ -26,25 +26,27 @@ class BalancedPositiveNegativeSampler(object):
 
         参数:
         matched_idxs: 真实的标签 List[Tensor] - 为每个anchor分配的标签
-          Tensor形状为: (h1*w1*num_anchors1 + h2*w2*num_anchors2 + ..., )
-          1, 0, -1分别对应: 正样本, 背景, 废弃的样本
+          Tensor形状为: (N, )
+          a. 正样本>=1
+          b. 负样本(背景)=0
+          c. 废弃的样本=-1
 
         返回: pos_idx, neg_idx
         pos_idx: List[Tensor] - 正样本的mask
-          Tensor的形状: (h1*w1*num_anchors1 + h2*w2*num_anchors2 + ..., )
+          Tensor的形状: (N, )
           正样本的位置会设置为1, 其它位置设置为0
         neg_idx: List[Tensor] - 负样本的mask
-          Tensor的形状: (h1*w1*num_anchors1 + h2*w2*num_anchors2 + ..., )
+          Tensor的形状: (N, )
           负样本的位置会设置为1, 其它位置设置为0
         """
         pos_idx = []
         neg_idx = []
         # 遍历每张图像
-        # matched_idxs_per_image的形状: (h1*w1*num_anchors1 + h2*w2*num_anchors2 + ..., )
+        # matched_idxs_per_image的形状: (N, )
         for matched_idxs_per_image in matched_idxs:
-            # positive - (num_positive, ) 正样本的位置索引
+            # positive - (num_positive, ) 正样本(>=1)的位置索引
             positive = torch.where(torch.ge(matched_idxs_per_image, 1))[0]
-            # negative - (num_negative, ) 负样本的位置索引
+            # negative - (num_negative, ) 负样本(=0)的位置索引
             negative = torch.where(torch.eq(matched_idxs_per_image, 0))[0]
 
             # 计算正样本和负样本的数量
@@ -65,14 +67,14 @@ class BalancedPositiveNegativeSampler(object):
             # neg_idx_per_image - (num_neg, ) 负样本的位置索引
             neg_idx_per_image = negative[perm2]
 
-            # pos_idx_per_image_mask的形状: (h1*w1*num_anchors1 + h2*w2*num_anchors2 + ..., )
+            # pos_idx_per_image_mask的形状: (N, )
             # 正样本的位置会设置为1, 其它位置设置为0
-            pos_idx_per_image_mask = torch.zeros_like(matched_idxs_per_image,
-                                                      dtype=torch.uint8)
-            # neg_idx_per_image_mask的形状: (h1*w1*num_anchors1 + h2*w2*num_anchors2 + ..., )
+            pos_idx_per_image_mask = torch.zeros_like(
+                matched_idxs_per_image, dtype=torch.uint8)  # 注意: mask类型
+            # neg_idx_per_image_mask的形状: (N, )
             # 负样本的位置会设置为1, 其它位置设置为0
-            neg_idx_per_image_mask = torch.zeros_like(matched_idxs_per_image,
-                                                      dtype=torch.uint8)
+            neg_idx_per_image_mask = torch.zeros_like(
+                matched_idxs_per_image, dtype=torch.uint8)  # 注意: mask类型
 
             pos_idx_per_image_mask[pos_idx_per_image] = 1
             neg_idx_per_image_mask[neg_idx_per_image] = 1
@@ -159,7 +161,7 @@ def encode_boxes(reference_boxes: Tensor, proposals: Tensor,
 
 class BoxCoder(object):
     """
-    Encoder & Decoder
+    Box Encoder & Decoder
     1. encode - 根据proposals/anchors和其匹配的gt boxes计算offset [可以作为训练时的label使用]
     2. decode - 根据offset和其匹配的anchors的坐标, 计算其对应的boxes的坐标
     """
@@ -168,38 +170,43 @@ class BoxCoder(object):
         weights: Tuple[float, float, float, float] = (1.0, 1.0, 1.0, 1.0),
         bbox_xform_clip: float = math.log(1000. / 16)
     ) -> None:
+        """
+        参数:
+        weights: 权重
+        bbox_xform_clip: 限制max value, 防止exp()的时候数值太大
+        """
         self.weights = weights
         self.bbox_xform_clip = bbox_xform_clip
 
     def encode(self, reference_boxes: List[Tensor],
                proposals: List[Tensor]) -> List[Tensor]:
         """
-        根据proposals和其匹配的gt boxes计算offset
+        根据proposals/anchors和其匹配的gt boxes计算offset [可以作为训练时的label使用]
 
         参数:
         reference_boxes: List[Tensor] - 与proposals匹配的gt box
-          Tensor形状为: (h1*w1*num_anchors1 + h2*w2*num_anchors2 + ..., 4)
+          Tensor形状为: (N, 4)
         proposals: List[Tensor], 每张图片对应的proposals
           1. 第一层List是这个batch有多少张图片, 也就是batch_size
-          2. Tensor的形状: (h1*w1*num_anchors1 + h2*w2*num_anchors2 + ..., 4)
+          2. Tensor的形状: (N, 4)
         
         返回:
         offsets: List[Tensor]
-          Tensor的形状: (h1*w1*num_anchors1 + h2*w2*num_anchors2 + ..., 4)
+          Tensor的形状: (N, 4)
         """
         # boxes_per_image: List[int], 记录了每张图片有多少个proposals
         # 方便后续的split操作
         boxes_per_image = [len(b) for b in reference_boxes]
-        # reference_boxes的形状: (batch_size*(h1*w1*num_anchors1+h2*w2*num_anchors2+...), 4)
+        # reference_boxes的形状: (batch_size*N, 4)
         reference_boxes = torch.cat(reference_boxes, dim=0)
-        # proposals的形状: (batch_size*(h1*w1*num_anchors1+h2*w2*num_anchors2+...), 4)
+        # proposals的形状: (batch_size*N, 4)
         proposals = torch.cat(proposals, dim=0)
 
-        #  targets: (batch_size*(h1*w1*num_anchors1+h2*w2*num_anchors2+...), 4)
+        #  targets: (batch_size*N, 4)
         targets = self.encode_single(reference_boxes, proposals)
 
         # List[Tensor]
-        # Tensor的形状: (h1*w1*num_anchors1 + h2*w2*num_anchors2 + ..., 4)
+        # Tensor的形状: (N, 4)
         return list(targets.split(boxes_per_image, 0))
 
     def encode_single(self, reference_boxes, proposals):
@@ -226,46 +233,42 @@ class BoxCoder(object):
 
     def decode(self, rel_codes: Tensor, boxes: List[Tensor]) -> Tensor:
         """    
-        通过一个batch图片的offset和anchors的坐标, 计算其对应的boxes的坐标
+        通过一个batch图片的offset和anchors/proposals的坐标, 计算其对应的boxes的坐标
+        注意: 因为不同的类别有不同的offset, 所以不同的类别会有不同的boxes
     
         参数:
-        rel_codes的形状: 预测的offset
-          1. 有一层feature map的情况: (batch_size*h*w*num_anchors, 4)
-          2. 有多层feature map的情况: (batch_size*(h1*w1*num_anchors1+h2*w2*num_anchors2+...), 4)
-        boxes: List[Tensor], 每张图片对应的anchors(是由feature map上的anchors映射过去的)
+        rel_codes的形状: (M1+M2+..., num_classes*4) 预测的offset
+        boxes: List[Tensor], 每张图片对应的anchors/proposals
           1. 第一层List是这个batch有多少张图片, 也就是batch_size
-          2. Tensor的形状:
-             如果只有一层feature map: (h*w*num_anchors, 4)   
-             如果有多层feature map: (h1*w1*num_anchors1 + h2*w2*num_anchors2 + ..., 4)
+          2. Tensor的形状: (M, 4)
         
         返回:
-        pred_boxes的形状: (batch_size*(h1*w1*num_anchors1+h2*w2*num_anchors2+...), 1, 4)
+        pred_boxes的形状: (M1+M2+..., num_classes, 4)
         """
         assert isinstance(boxes, (list, tuple))
         assert isinstance(rel_codes, torch.Tensor)
         # boxes_per_image: List[int]
         # 1. 数量是batch_size
-        # 2. 里面的元素: h1*w1*num_anchors1 + h2*w2*num_anchors2 + ...
+        # 2. 里面的元素: M1, M2, ...
         boxes_per_image = [b.size(0) for b in boxes]
-        # concat_boxes的形状: (batch_size*(h1*w1*num_anchors1+h2*w2*num_anchors2+...), 4)
+        # concat_boxes的形状: (M1+M2+..., 4)
         concat_boxes = torch.cat(boxes, dim=0)
 
         # 一个批量的box总数:
-        # batch_size*(h1*w1*num_anchors1+h2*w2*num_anchors2+...)
+        # M1+M2+...
         box_sum = 0
         for val in boxes_per_image:
             box_sum += val
 
-        # 将预测的bbox offset应用到对应anchors上得到预测bbox的坐标
-        # 假设只有一层feature map:
-        # rel_codes的形状: (batch_size*(h1*w1*num_anchors1+h2*w2*num_anchors2+...), 4) - 预测的offset
-        # concat_boxes的形状: (batch_size*(h1*w1*num_anchors1+h2*w2*num_anchors2+...), 4) - 其对应的anchors
-        # pred_boxes的形状: (batch_size*(h1*w1*num_anchors1+h2*w2*num_anchors2+...), 4)
+        # 将预测的bbox offset应用到对应anchors/proposals上得到预测bbox的坐标
+        # rel_codes的形状: (M1+M2+..., num_classes*4) - 预测的offset
+        # concat_boxes的形状: (M1+M2+..., 4) - 其对应的anchors
+        # pred_boxes的形状: (M1+M2+..., num_classes*4)
         pred_boxes = self.decode_single(rel_codes, concat_boxes)
 
         # 防止pred_boxes为空时导致reshape报错
         if box_sum > 0:
-            # pred_boxes的形状: (batch_size*(h1*w1*num_anchors1+h2*w2*num_anchors2+...), 1, 4)
+            # pred_boxes的形状: (M1+M2+..., num_classes, 4)
             pred_boxes = pred_boxes.reshape(box_sum, -1, 4)
 
         return pred_boxes
@@ -275,29 +278,29 @@ class BoxCoder(object):
         将预测的offset应用到对应anchors上得到预测boxes的坐标
 
         参数:
-        rel_codes的形状: (batch_size*(h1*w1*num_anchors1+h2*w2*num_anchors2+...), 4) - offset
-        boxes的形状: (batch_size*(h1*w1*num_anchors1+h2*w2*num_anchors2+...), 4) - anchor/proposal
+        rel_codes的形状: (M1+M2+..., num_classes*4) - offset
+        boxes的形状: (M1+M2+..., 4) - anchor/proposal
 
         返回:
-        pred_boxes的形状: (batch_size*(h1*w1*num_anchors1+h2*w2*num_anchors2+...), 4)
+        pred_boxes的形状: (M1+M2+..., num_classes*4)
         """
         boxes = boxes.to(rel_codes.dtype)
 
         # xmin, ymin, xmax, ymax
-        # widths的形状: (batch_size*(h1*w1*num_anchors1+h2*w2*num_anchors2+...), )
-        # heights的形状: (batch_size*(h1*w1*num_anchors1+h2*w2*num_anchors2+...), )
-        # ctr_x的形状: (batch_size*(h1*w1*num_anchors1+h2*w2*num_anchors2+...), )
-        # ctr_y的形状: (batch_size*(h1*w1*num_anchors1+h2*w2*num_anchors2+...), )
+        # widths的形状:  (M1+M2+..., )
+        # heights的形状: (M1+M2+..., )
+        # ctr_x的形状: (M1+M2+..., )
+        # ctr_y的形状: (M1+M2+..., )
         widths = boxes[:, 2] - boxes[:, 0]  # anchor/proposal宽度
         heights = boxes[:, 3] - boxes[:, 1]  # anchor/proposal高度
         ctr_x = boxes[:, 0] + 0.5 * widths  # anchor/proposal中心x坐标
         ctr_y = boxes[:, 1] + 0.5 * heights  # anchor/proposal中心y坐标
 
         wx, wy, ww, wh = self.weights
-        # dx的形状: (batch_size*(h1*w1*num_anchors1+h2*w2*num_anchors2+...), 1)
-        # dy的形状: (batch_size*(h1*w1*num_anchors1+h2*w2*num_anchors2+...), 1)
-        # dw的形状: (batch_size*(h1*w1*num_anchors1+h2*w2*num_anchors2+...), 1)
-        # dh的形状: (batch_size*(h1*w1*num_anchors1+h2*w2*num_anchors2+...), 1)
+        # dx的形状: (M1+M2+..., num_classes)
+        # dy的形状: (M1+M2+..., num_classes)
+        # dw的形状: (M1+M2+..., num_classes)
+        # dh的形状: (M1+M2+..., num_classes)
         dx = rel_codes[:, 0::4] / wx  # 预测anchors/proposals的中心坐标x回归参数
         dy = rel_codes[:, 1::4] / wy  # 预测anchors/proposals的中心坐标y回归参数
         dw = rel_codes[:, 2::4] / ww  # 预测anchors/proposals的宽度回归参数
@@ -307,31 +310,30 @@ class BoxCoder(object):
         dw = torch.clamp(dw, max=self.bbox_xform_clip)
         dh = torch.clamp(dh, max=self.bbox_xform_clip)
 
-        # pred_ctr_x的形状: (batch_size*(h1*w1*num_anchors1+h2*w2*num_anchors2+...), 1)
-        # pred_ctr_y的形状: (batch_size*(h1*w1*num_anchors1+h2*w2*num_anchors2+...), 1)
-        # pred_w的形状: (batch_size*(h1*w1*num_anchors1+h2*w2*num_anchors2+...), 1)
-        # pred_h的形状: (batch_size*(h1*w1*num_anchors1+h2*w2*num_anchors2+...), 1)
+        # pred_ctr_x的形状: (M1+M2+..., num_classes)
+        # pred_ctr_y的形状: (M1+M2+..., num_classes)
+        # pred_w的形状: (M1+M2+..., num_classes)
+        # pred_h的形状: (M1+M2+..., num_classes)
         pred_ctr_x = dx * widths[:, None] + ctr_x[:, None]
         pred_ctr_y = dy * heights[:, None] + ctr_y[:, None]
         pred_w = torch.exp(dw) * widths[:, None]
         pred_h = torch.exp(dh) * heights[:, None]
 
-        # xmin的形状: (batch_size*(h1*w1*num_anchors1+h2*w2*num_anchors2+...), 1)
+        # xmin的形状: (M1+M2+..., num_classes)
         pred_boxes1 = pred_ctr_x - torch.tensor(
             0.5, dtype=pred_ctr_x.dtype, device=pred_w.device) * pred_w
-        # ymin的形状: (batch_size*(h1*w1*num_anchors1+h2*w2*num_anchors2+...), 1)
+        # ymin的形状: (M1+M2+..., num_classes)
         pred_boxes2 = pred_ctr_y - torch.tensor(
             0.5, dtype=pred_ctr_y.dtype, device=pred_h.device) * pred_h
-        # xmax的形状: (batch_size*(h1*w1*num_anchors1+h2*w2*num_anchors2+...), 1)
+        # xmax的形状: (M1+M2+..., num_classes)
         pred_boxes3 = pred_ctr_x + torch.tensor(
             0.5, dtype=pred_ctr_x.dtype, device=pred_w.device) * pred_w
-        # ymax的形状: (batch_size*(h1*w1*num_anchors1+h2*w2*num_anchors2+...), 1)
+        # ymax的形状: (M1+M2+..., num_classes)
         pred_boxes4 = pred_ctr_y + torch.tensor(
             0.5, dtype=pred_ctr_y.dtype, device=pred_h.device) * pred_h
 
         # pred_boxes的形状:
-        # (batch_size*(h1*w1*num_anchors1+h2*w2*num_anchors2+...), 1, 4) ->
-        # (batch_size*(h1*w1*num_anchors1+h2*w2*num_anchors2+...), 4)
+        # (M1+M2+..., num_classes, 4) -> (M1+M2+..., num_classes*4)
         pred_boxes = torch.stack(
             (pred_boxes1, pred_boxes2, pred_boxes3, pred_boxes4),
             dim=2).flatten(1)

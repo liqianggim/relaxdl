@@ -1,10 +1,15 @@
-from typing import List, Dict, Tuple
+from typing import List, Dict
 from torch import Tensor
 from collections import defaultdict
 import PIL.ImageDraw as ImageDraw
 import PIL.ImageFont as ImageFont
 import numpy as np
 import torch
+import torchvision
+from mobilenet_v2 import mobilenet_v2, MobileNetV2
+from faster_rcnn_framework import FasterRCNN
+from pascal_voc import load_pascal_voc
+from rpn import AnchorsGenerator
 
 STANDARD_COLORS = [
     'AliceBlue', 'Chartreuse', 'Aqua', 'Aquamarine', 'Azure', 'Beige',
@@ -32,24 +37,6 @@ STANDARD_COLORS = [
     'GreenYellow', 'Teal', 'Thistle', 'Tomato', 'Turquoise', 'Violet', 'Wheat',
     'White', 'WhiteSmoke', 'Yellow', 'YellowGreen'
 ]
-
-
-class ImageList(object):
-    def __init__(self, tensors: Tensor, image_sizes: List[Tuple[int,
-                                                                int]]) -> None:
-        """
-        图像List, 包含`padding后的图像数据`以及`padding前的图像尺寸`
-
-        参数:
-        tensors的形状: (batch_size, C, H_new, W_new) padding后的图像数据
-        image_sizes: list of (w, h) padding前的图像尺寸
-        """
-        self.tensors = tensors
-        self.image_sizes = image_sizes
-
-    def to(self, device: torch.device) -> object:
-        cast_tensor = self.tensors.to(device)
-        return ImageList(cast_tensor, self.image_sizes)
 
 
 def filter_low_thresh(boxes: List, scores: List, classes: List,
@@ -173,3 +160,66 @@ def draw_box(image: object,
                   fill=color)
         draw_text(draw, box_to_display_str_map, box, left, right, top, bottom,
                   color)
+
+
+def create_backbone(pretrained: bool = True,
+                    num_classes: int = 1000,
+                    alpha: float = 1.0,
+                    round_nearest: float = 8) -> MobileNetV2:
+    """
+    创建特征提取的backbone
+
+    其实backbone的类别(num_classes)是没有意义的, 因为我们只关心特征提取的部分
+
+    >>> backbone = create_backbone()
+    >>> x = torch.randn((2, 3, 1024, 1024))
+    >>> backbone(x).shape
+        torch.Size([2, 1280, 32, 32])
+    """
+    backbone = mobilenet_v2(pretrained, num_classes, alpha,
+                            round_nearest).features
+    backbone.out_channels = 1280  # 增加这个属性, 后续在创建`RPNHead`需要用到这个属性
+    return backbone
+
+
+def create_model(num_classes: int = 21) -> FasterRCNN:
+    """
+    创建Faster RCNN Model
+    """
+    backbone = create_backbone(num_classes=num_classes)
+
+    anchor_generator = AnchorsGenerator(sizes=((32, 64, 128, 256, 512), ),
+                                        aspect_ratios=((0.5, 1.0, 2.0), ))
+
+    roi_pooler = torchvision.ops.MultiScaleRoIAlign(
+        featmap_names=['0'],  # 在哪些特征层上进行roi pooling
+        output_size=[7, 7],  # roi_pooling输出特征矩阵尺寸
+        sampling_ratio=2)  # 采样率
+
+    model = FasterRCNN(backbone=backbone,
+                       num_classes=num_classes,
+                       rpn_anchor_generator=anchor_generator,
+                       box_roi_pool=roi_pooler)
+
+    return model
+
+
+def forward():
+    device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
+    print("Using {} device training.".format(device.type))
+    batch_size = 8
+    train_iter, test_iter = load_pascal_voc(batch_size)
+    # background + 20 classes
+    model = create_model(num_classes=21)
+    model.to(device)
+    model.train()
+    for i, (images, targets) in enumerate(train_iter):
+        images = list(image.to(device) for image in images)
+        targets = [{k: v.to(device) for k, v in t.items()} for t in targets]
+        loss_dict = model(images, targets)  # FasterRCNN
+        losses = sum(loss for loss in loss_dict.values())
+        print(f'step:{i} losses:{losses}')
+        break
+
+
+forward()
