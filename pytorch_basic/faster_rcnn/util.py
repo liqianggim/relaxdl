@@ -220,4 +220,5 @@ def forward(batch_size=2):
         print(f'step:{i} losses:{losses}')
         break
 
+
 forward(4)

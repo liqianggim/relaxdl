@@ -144,10 +144,8 @@ class ResNet(nn.Module):
                                bias=False)
         self.bn1 = nn.BatchNorm2d(self.in_channel)
         self.relu = nn.ReLU(inplace=True)
-        # 3x3
         # [64, 112, 112] -> [64, 56, 56]
         self.maxpool = nn.MaxPool2d(kernel_size=3, stride=2, padding=1)
-
         # [64, 56, 56] -> [256, 56, 56]
         self.layer1 = self._make_layer(block, 64, blocks_num[0])
         # [256, 56, 56] -> [512, 28, 28]
@@ -231,7 +229,6 @@ class ResNet(nn.Module):
         x = self.relu(x)
         # [batch_size, 64, 112, 112] -> [batch_size, 64, 56, 56]
         x = self.maxpool(x)
-
         # [batch_size, 64, 56, 56] -> [batch_size, 256, 56, 56]
         x = self.layer1(x)
         # [batch_size, 256, 56, 56] -> [batch_size, 512, 28, 28]
