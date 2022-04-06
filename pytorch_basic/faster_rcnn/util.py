@@ -7,7 +7,7 @@ import numpy as np
 import torch
 import torchvision
 from mobilenet_v2 import mobilenet_v2, MobileNetV2
-from faster_rcnn_framework import FasterRCNN
+from faster_rcnn_model import FasterRCNN
 from pascal_voc import load_pascal_voc
 from rpn import AnchorsGenerator
 
